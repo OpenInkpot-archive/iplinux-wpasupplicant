@@ -1,0 +1,39 @@
+Patch System
+============
+The quilt patch system is used. `debian/rules patch` is necessary to replicate
+the source tree that is used to produce resulting binary packages.
+
+Manual Page Handling
+====================
+In order to have the manual pages recreated at build time, they must be removed
+from our package tree. We do this simply by omitting the prebuilt manual pages
+from our SVN. When using svn-upgrade, this must be done manually post-upgrade
+to avoid confusing subversion, or else if the debian/rules clean target is used
+in the package svn working copy (default svn-buildpackage behaviour) the
+prebuilt manual pages would be removed without subversion knowing about it.
+
+svn revert wpa_supplicant/doc/docbook/*.5 wpa_supplicant/doc/docbook/*.8
+svn delete wpa_supplicant/doc/docbook/*.5 wpa_supplicant/doc/docbook/*.8
+
+
+Prebuilt manual pages are supplied upstream releases, but are not present in
+git snapshots. Rebuilding the manual pages at build time yields two advantages:
+
+1. No need to modify build rules when packaging git snapshots
+
+2. Allows opportunity to patch in debian specific documentation to enhance user
+   experience
+
+
+It is expected that dpkg-source will warn about their removal:
+
+dpkg-source: building wpasupplicant using existing wpasupplicant_0.6.2.orig.tar.gz
+dpkg-source: building wpasupplicant in wpasupplicant_0.6.2-1.diff.gz
+dpkg-source: warning: ignoring deletion of file wpa_supplicant/doc/docbook/wpa_supplicant.8
+dpkg-source: warning: ignoring deletion of file wpa_supplicant/doc/docbook/wpa_supplicant.conf.5
+dpkg-source: warning: ignoring deletion of file wpa_supplicant/doc/docbook/wpa_priv.8
+dpkg-source: warning: ignoring deletion of file wpa_supplicant/doc/docbook/wpa_passphrase.8
+dpkg-source: warning: ignoring deletion of file wpa_supplicant/doc/docbook/wpa_gui.8
+dpkg-source: warning: ignoring deletion of file wpa_supplicant/doc/docbook/wpa_cli.8
+dpkg-source: warning: ignoring deletion of file wpa_supplicant/doc/docbook/wpa_background.8
+dpkg-source: building wpasupplicant in wpasupplicant_0.6.2-1.dsc

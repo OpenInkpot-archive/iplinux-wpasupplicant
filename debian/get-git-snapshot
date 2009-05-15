@@ -1,0 +1,24 @@
+#!/bin/bash -e
+
+DATE=$(date -u +%Y%m%d)
+
+TMP=$(mktemp -d -p /tmp wpasupplicant.XXXXX)
+trap "{ [[ -d ${TMP} ]] && find ${TMP} -delete; }" exit
+
+pushd ${TMP} >/dev/null
+	git clone 'git://w1.fi/srv/git/hostap.git' hostap
+
+	pushd hostap >/dev/null
+		UPSVER=$(head -n 3 wpa_supplicant/ChangeLog | tail -n 1 | sed 's/^.* - v//')
+		GITVER=$(git describe --always | sed 's/^.*-//');
+		VER=${UPSVER}~git.${DATE}.${GITVER}
+		
+		git-archive --format=tar --prefix=wpa_supplicant-${VER}/ HEAD \
+			README COPYING patches src wpa_supplicant |
+			tar --directory=.. -xf -
+	popd >/dev/null
+
+	tar czf wpasupplicant-${VER}.tar.gz wpa_supplicant-${VER}/
+popd >/dev/null
+
+cp -v ${TMP}/wpasupplicant-${VER}.tar.gz ${1:-.}

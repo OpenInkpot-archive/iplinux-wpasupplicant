@@ -1,0 +1,136 @@
+#!/usr/bin/make -f
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+include /usr/share/quilt/quilt.make
+
+WPAGUI = wpa_gui-qt4
+
+CFLAGS = -MMD -Wall -g
+LDFLAGS = -Wl,--as-needed
+
+ifneq (,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
+	CFLAGS += -O0
+else
+	CFLAGS += -O2
+endif
+
+DEB_HOST_ARCH_OS := $(shell dpkg-architecture -qDEB_HOST_ARCH_OS)
+
+ifeq ($(DEB_HOST_ARCH_OS),kfreebsd)
+	CONFIG := debian/config/kfreebsd
+else
+	CONFIG := debian/config/linux
+endif
+
+
+build: build-stamp
+build-stamp: $(QUILT_STAMPFN)
+	dh_testdir
+	
+	# wpa_supplicant
+	cp -v $(CONFIG) wpa_supplicant/.config
+	CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" $(MAKE) -C wpa_supplicant all
+	
+	# wpa_gui
+	$(MAKE) -C wpa_supplicant $(WPAGUI)
+	
+	# manpages
+	$(MAKE) -C wpa_supplicant/doc/docbook man
+	
+	touch $@
+
+clean: unpatch
+	dh_testdir
+	
+	$(MAKE) -C wpa_supplicant clean
+	
+	if [ -f wpa_supplicant/$(WPAGUI)/Makefile ]; then \
+		$(MAKE) -C wpa_supplicant/$(WPAGUI) distclean ; \
+	fi
+	
+	$(MAKE) -C wpa_supplicant/doc/docbook clean
+	
+	dh_clean wpa_supplicant/.config build-stamp install-stamp
+
+install: build
+	dh_testdir
+	dh_testroot
+	dh_clean -k 
+	dh_installdirs
+	dh_install
+	
+	# wpa_gui
+	dh_install --package=wpagui wpa_supplicant/$(WPAGUI)/wpa_gui usr/sbin/
+	dh_install --package=wpagui wpa_supplicant/$(WPAGUI)/wpa_gui.desktop \
+		usr/share/applications/
+	dh_install --package=wpagui wpa_supplicant/$(WPAGUI)/icons/wpa_gui.svg \
+		usr/share/icons/hicolor/scalable/apps/
+	dh_desktop --package=wpagui
+	# wpa_gui pixmaps were created with:
+	#   `make -C wpa_supplicant/$(WPAGUI)/icons/'
+	# Not built as part of package build process due to excess build
+	# dependencies of inkscape + imagemagick.
+	dh_install --package=wpagui debian/wpa_gui/wpa_gui.xpm \
+		usr/share/pixmaps/
+	dh_install --package=wpagui debian/wpa_gui/wpa_gui-16.xpm \
+		usr/share/pixmaps/
+	dh_installmenu --package=wpagui
+	# wpa_gui menu exec wrapper
+	install --mode=755 -D debian/wpa_gui/netdev_wrapper \
+		debian/wpagui/usr/share/wpagui/netdev_wrapper
+	
+	# ifupdown
+	install --mode=755 -D debian/ifupdown/ifupdown.sh \
+		debian/wpasupplicant/etc/wpa_supplicant/ifupdown.sh
+	install --mode=755 -D debian/ifupdown/functions.sh \
+		debian/wpasupplicant/etc/wpa_supplicant/functions.sh
+	install --mode=755 -D debian/ifupdown/action_wpa.sh \
+		debian/wpasupplicant/etc/wpa_supplicant/action_wpa.sh
+	
+	# wpa_action
+	install --mode=755 -D debian/ifupdown/wpa_action.sh \
+		debian/wpasupplicant/sbin/wpa_action
+	
+	# D-Bus
+	install --mode=644 -D wpa_supplicant/dbus-wpa_supplicant.conf \
+		debian/wpasupplicant/etc/dbus-1/system.d/wpa_supplicant.conf
+	install --mode=644 -D wpa_supplicant/dbus-wpa_supplicant.service \
+		debian/wpasupplicant/usr/share/dbus-1/system-services/fi.epitest.hostap.WPASupplicant.service
+	
+	# sanitise the example configuration
+	mkdir -p debian/wpasupplicant/usr/share/doc/wpasupplicant
+	sed 's/^\([^#]\+=.*\|}\)/#\1/' < wpa_supplicant/wpa_supplicant.conf \
+		> debian/wpasupplicant/usr/share/doc/wpasupplicant/README.wpa_supplicant.conf
+
+# Build architecture-independent files here.
+binary-indep: install
+
+# Build architecture-dependent files here.
+binary-arch: install
+	dh_testdir
+	dh_testroot
+	dh_installchangelogs wpa_supplicant/ChangeLog
+	dh_installdocs
+	dh_installexamples
+	dh_installlogrotate --package=wpasupplicant --name=wpa_action
+	dh_installlogrotate --package=wpasupplicant --name=wpa_supplicant
+	dh_installinit --package=wpasupplicant --name=wpa-ifupdown --no-start -- start 15 0 6 .
+	dh_installman
+	dh_link
+	dh_strip
+	dh_compress
+	dh_fixperms
+	dh_installdeb
+	dh_shlibdeps
+	dh_gencontrol
+	dh_md5sums
+	dh_builddeb
+
+binary: binary-indep binary-arch
+.PHONY: build clean install binary-indep binary-arch binary install
+
+get-git-snapshot:
+	chmod a+rx debian/$@
+	debian/$@ ..

@@ -1,0 +1,369 @@
+From: Jouni Malinen <j@w1.fi>
+Date: Sat, 14 Feb 2009 14:43:43 +0000 (+0200)
+Subject: Allow multiple driver wrappers to be specified on command line
+X-Git-Url: http://w1.fi/gitweb/gitweb.cgi?p=hostap.git;a=commitdiff_plain;h=362f781e1cfbc006d6e0d776981e8bc90ae9354f
+
+Allow multiple driver wrappers to be specified on command line
+
+For example, -Dnl80211,wext could be used to automatically select
+between nl80211 and wext. The first driver wrapper that is able to
+initialize the interface will be used.
+---
+
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -89,7 +89,7 @@ static void wpa_driver_nl80211_scan_time
+ static int wpa_driver_nl80211_set_mode(void *priv, int mode);
+ static int wpa_driver_nl80211_flush_pmkid(void *priv);
+ static int wpa_driver_nl80211_get_range(void *priv);
+-static void
++static int
+ wpa_driver_nl80211_finish_drv_init(struct wpa_driver_nl80211_data *drv);
+ 
+ 
+@@ -1492,10 +1492,14 @@ static void * wpa_driver_nl80211_init(vo
+ 				 ctx);
+ 	drv->wext_event_sock = s;
+ 
+-	wpa_driver_nl80211_finish_drv_init(drv);
++	if (wpa_driver_nl80211_finish_drv_init(drv))
++		goto err7;
+ 
+ 	return drv;
+ 
++err7:
++	eloop_unregister_read_sock(drv->wext_event_sock);
++	close(drv->wext_event_sock);
+ err6:
+ 	close(drv->ioctl_sock);
+ err5:
+@@ -1512,17 +1516,21 @@ err1:
+ }
+ 
+ 
+-static void
++static int
+ wpa_driver_nl80211_finish_drv_init(struct wpa_driver_nl80211_data *drv)
+ {
+ 	int flags;
+ 
+-	if (wpa_driver_nl80211_get_ifflags(drv, &flags) != 0)
+-		printf("Could not get interface '%s' flags\n", drv->ifname);
+-	else if (!(flags & IFF_UP)) {
++	if (wpa_driver_nl80211_get_ifflags(drv, &flags) != 0) {
++		wpa_printf(MSG_ERROR, "Could not get interface '%s' flags",
++			   drv->ifname);
++		return -1;
++	}
++	if (!(flags & IFF_UP)) {
+ 		if (wpa_driver_nl80211_set_ifflags(drv, flags | IFF_UP) != 0) {
+-			printf("Could not set interface '%s' UP\n",
+-			       drv->ifname);
++			wpa_printf(MSG_ERROR, "Could not set interface '%s' "
++				   "UP", drv->ifname);
++			return -1;
+ 		}
+ 	}
+ 
+@@ -1540,6 +1548,8 @@ wpa_driver_nl80211_finish_drv_init(struc
+ 	drv->ifindex = if_nametoindex(drv->ifname);
+ 
+ 	wpa_driver_nl80211_send_oper_ifla(drv, 1, IF_OPER_DORMANT);
++
++	return 0;
+ }
+ 
+ 
+--- a/src/drivers/driver_wext.c
++++ b/src/drivers/driver_wext.c
+@@ -34,7 +34,7 @@
+ 
+ static int wpa_driver_wext_flush_pmkid(void *priv);
+ static int wpa_driver_wext_get_range(void *priv);
+-static void wpa_driver_wext_finish_drv_init(struct wpa_driver_wext_data *drv);
++static int wpa_driver_wext_finish_drv_init(struct wpa_driver_wext_data *drv);
+ 
+ 
+ static int wpa_driver_wext_send_oper_ifla(struct wpa_driver_wext_data *drv,
+@@ -913,50 +913,60 @@ void * wpa_driver_wext_init(void *ctx, c
+ 	drv->ioctl_sock = socket(PF_INET, SOCK_DGRAM, 0);
+ 	if (drv->ioctl_sock < 0) {
+ 		perror("socket(PF_INET,SOCK_DGRAM)");
+-		os_free(drv);
+-		return NULL;
++		goto err1;
+ 	}
+ 
+ 	s = socket(PF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+ 	if (s < 0) {
+ 		perror("socket(PF_NETLINK,SOCK_RAW,NETLINK_ROUTE)");
+-		close(drv->ioctl_sock);
+-		os_free(drv);
+-		return NULL;
++		goto err2;
+ 	}
++	drv->event_sock = s;
+ 
+ 	os_memset(&local, 0, sizeof(local));
+ 	local.nl_family = AF_NETLINK;
+ 	local.nl_groups = RTMGRP_LINK;
+ 	if (bind(s, (struct sockaddr *) &local, sizeof(local)) < 0) {
+ 		perror("bind(netlink)");
+-		close(s);
+-		close(drv->ioctl_sock);
+-		os_free(drv);
+-		return NULL;
++		goto err3;
+ 	}
+ 
+ 	eloop_register_read_sock(s, wpa_driver_wext_event_receive, drv, ctx);
+-	drv->event_sock = s;
+ 
+ 	drv->mlme_sock = -1;
+ 
+-	wpa_driver_wext_finish_drv_init(drv);
++	if (wpa_driver_wext_finish_drv_init(drv) < 0)
++		goto err4;
+ 
+ 	return drv;
++
++err4:
++	eloop_unregister_read_sock(drv->event_sock);
++err3:
++	close(drv->event_sock);
++err2:
++	close(drv->ioctl_sock);
++err1:
++	os_free(drv);
++	return NULL;
+ }
+ 
+ 
+-static void wpa_driver_wext_finish_drv_init(struct wpa_driver_wext_data *drv)
++static int wpa_driver_wext_finish_drv_init(struct wpa_driver_wext_data *drv)
+ {
+ 	int flags;
+ 
+-	if (wpa_driver_wext_get_ifflags(drv, &flags) != 0)
+-		printf("Could not get interface '%s' flags\n", drv->ifname);
+-	else if (!(flags & IFF_UP)) {
++	if (wpa_driver_wext_get_ifflags(drv, &flags) != 0) {
++		wpa_printf(MSG_ERROR, "Could not get interface '%s' flags",
++			   drv->ifname);
++		return -1;
++	}
++
++	if (!(flags & IFF_UP)) {
+ 		if (wpa_driver_wext_set_ifflags(drv, flags | IFF_UP) != 0) {
+-			printf("Could not set interface '%s' UP\n",
+-			       drv->ifname);
++			wpa_printf(MSG_ERROR, "Could not set interface '%s' "
++				   "UP", drv->ifname);
++			return -1;
+ 		} else {
+ 			/*
+ 			 * Wait some time to allow driver to initialize before
+@@ -977,7 +987,9 @@ static void wpa_driver_wext_finish_drv_i
+ 	wpa_driver_wext_flush_pmkid(drv);
+ 
+ 	if (wpa_driver_wext_set_mode(drv, 0) < 0) {
+-		printf("Could not configure driver to use managed mode\n");
++		wpa_printf(MSG_DEBUG, "Could not configure driver to use "
++			   "managed mode");
++		/* Try to use it anyway */
+ 	}
+ 
+ 	wpa_driver_wext_get_range(drv);
+@@ -1000,6 +1012,8 @@ static void wpa_driver_wext_finish_drv_i
+ 	}
+ 
+ 	wpa_driver_wext_send_oper_ifla(drv, 1, IF_OPER_DORMANT);
++
++	return 0;
+ }
+ 
+ 
+--- a/wpa_supplicant/ChangeLog
++++ b/wpa_supplicant/ChangeLog
+@@ -11,6 +11,9 @@ ChangeLog for wpa_supplicant
+ 	  configurable with a new command line options (-G<seconds>)
+ 	* fixed scan buffer processing with WEXT to handle up to 65535
+ 	  byte result buffer (previously, limited to 32768 bytes)
++	* allow multiple driver wrappers to be specified on command line
++	  (e.g., -Dnl80211,wext); the first one that is able to initialize the
++	  interface will be used
+ 
+ 2009-01-06 - v0.6.7
+ 	* added support for Wi-Fi Protected Setup (WPS)
+--- a/wpa_supplicant/README
++++ b/wpa_supplicant/README
+@@ -500,7 +500,7 @@ options:
+   -C = ctrl_interface parameter (only used if -c is not)
+   -i = interface name
+   -d = increase debugging verbosity (-dd even more)
+-  -D = driver name
++  -D = driver name (can be multiple drivers: nl80211,wext)
+   -f = Log output to default log location (normally /tmp)
+   -g = global ctrl_interface
+   -K = include keys (passwords, etc.) in debug output
+@@ -544,6 +544,13 @@ enabled:
+ 
+ wpa_supplicant -c/etc/wpa_supplicant.conf -iwlan0 -d
+ 
++If the specific driver wrapper is not known beforehand, it is possible
++to specify multiple comma separated driver wrappers on the command
++line. wpa_supplicant will use the first driver wrapper that is able to
++initialize the interface.
++
++wpa_supplicant -Dnl80211,wext -c/etc/wpa_supplicant.conf -iwlan0
++
+ 
+ wpa_supplicant can control multiple interfaces (radios) either by
+ running one process for each interface separately or by running just
+--- a/wpa_supplicant/doc/docbook/wpa_supplicant.sgml
++++ b/wpa_supplicant/doc/docbook/wpa_supplicant.sgml
+@@ -388,8 +388,8 @@
+       <varlistentry>
+ 	<term>-D driver</term>
+ 	<listitem>
+-	  <para>Driver to use. (Per interface, see the available options
+-		  below.)</para>
++	  <para>Driver to use (can be multiple drivers: nl80211,wext).
++		  (Per interface, see the available options below.)</para>
+ 	</listitem>
+       </varlistentry>
+ 
+@@ -509,6 +509,15 @@ wpa_supplicant -B -c/etc/wpa_supplicant.
+ wpa_supplicant -c/etc/wpa_supplicant.conf -iwlan0 -d
+ </programlisting></blockquote>
+ 
++    <para>If the specific driver wrapper is not known beforehand, it is
++    possible to specify multiple comma separated driver wrappers on the command
++    line. <command>wpa_supplicant</command> will use the first driver
++    wrapper that is able to initialize the interface.</para>
++
++<blockquote><programlisting>
++wpa_supplicant -Dnl80211,wext -c/etc/wpa_supplicant.conf -iwlan0
++</programlisting></blockquote>
++
+     <para><command>wpa_supplicant</command> can control multiple
+     interfaces (radios) either by running one process for each
+     interface separately or by running just one process and list of
+--- a/wpa_supplicant/main.c
++++ b/wpa_supplicant/main.c
+@@ -52,7 +52,7 @@ static void usage(void)
+ 	       "  -C = ctrl_interface parameter (only used if -c is not)\n"
+ 	       "  -i = interface name\n"
+ 	       "  -d = increase debugging verbosity (-dd even more)\n"
+-	       "  -D = driver name\n"
++	       "  -D = driver name (can be multiple drivers: nl80211,wext)\n"
+ #ifdef CONFIG_DEBUG_FILE
+ 	       "  -f = log output to debug file instead of stdout\n"
+ #endif /* CONFIG_DEBUG_FILE */
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -1458,6 +1458,8 @@ static int wpa_supplicant_set_driver(str
+ 				     const char *name)
+ {
+ 	int i;
++	size_t len;
++	const char *pos;
+ 
+ 	if (wpa_s == NULL)
+ 		return -1;
+@@ -1474,14 +1476,21 @@ static int wpa_supplicant_set_driver(str
+ 		return 0;
+ 	}
+ 
++	pos = os_strchr(name, ',');
++	if (pos)
++		len = pos - name;
++	else
++		len = os_strlen(name);
+ 	for (i = 0; wpa_supplicant_drivers[i]; i++) {
+-		if (os_strcmp(name, wpa_supplicant_drivers[i]->name) == 0) {
++		if (os_strlen(wpa_supplicant_drivers[i]->name) == len &&
++		    os_strncmp(name, wpa_supplicant_drivers[i]->name, len) ==
++		    0) {
+ 			wpa_s->driver = wpa_supplicant_drivers[i];
+ 			return 0;
+ 		}
+ 	}
+ 
+-	wpa_printf(MSG_ERROR, "Unsupported driver '%s'.\n", name);
++	wpa_printf(MSG_ERROR, "Unsupported driver '%s'.", name);
+ 	return -1;
+ }
+ 
+@@ -1669,6 +1678,9 @@ static struct wpa_supplicant * wpa_suppl
+ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
+ 				     struct wpa_interface *iface)
+ {
++	const char *ifname, *driver;
++	struct wpa_driver_capa capa;
++
+ 	wpa_printf(MSG_DEBUG, "Initializing interface '%s' conf '%s' driver "
+ 		   "'%s' ctrl_interface '%s' bridge '%s'", iface->ifname,
+ 		   iface->confname ? iface->confname : "N/A",
+@@ -1676,10 +1688,6 @@ static int wpa_supplicant_init_iface(str
+ 		   iface->ctrl_interface ? iface->ctrl_interface : "N/A",
+ 		   iface->bridge_ifname ? iface->bridge_ifname : "N/A");
+ 
+-	if (wpa_supplicant_set_driver(wpa_s, iface->driver) < 0) {
+-		return -1;
+-	}
+-
+ 	if (iface->confname) {
+ #ifdef CONFIG_BACKEND_FILE
+ 		wpa_s->confname = os_rel2abs_path(iface->confname);
+@@ -1747,18 +1755,6 @@ static int wpa_supplicant_init_iface(str
+ 			   sizeof(wpa_s->bridge_ifname));
+ 	}
+ 
+-	return 0;
+-}
+-
+-
+-static int wpa_supplicant_init_iface2(struct wpa_supplicant *wpa_s)
+-{
+-	const char *ifname;
+-	struct wpa_driver_capa capa;
+-
+-	wpa_printf(MSG_DEBUG, "Initializing interface (2) '%s'",
+-		   wpa_s->ifname);
+-
+ 	/* RSNA Supplicant Key Management - INITIALIZE */
+ 	eapol_sm_notify_portEnabled(wpa_s->eapol, FALSE);
+ 	eapol_sm_notify_portValid(wpa_s->eapol, FALSE);
+@@ -1767,8 +1763,21 @@ static int wpa_supplicant_init_iface2(st
+ 	 * L2 receive handler so that association events are processed before
+ 	 * EAPOL-Key packets if both become available for the same select()
+ 	 * call. */
++	driver = iface->driver;
++next_driver:
++	if (wpa_supplicant_set_driver(wpa_s, driver) < 0)
++		return -1;
++
+ 	wpa_s->drv_priv = wpa_drv_init(wpa_s, wpa_s->ifname);
+ 	if (wpa_s->drv_priv == NULL) {
++		const char *pos;
++		pos = os_strchr(driver, ',');
++		if (pos) {
++			wpa_printf(MSG_DEBUG, "Failed to initialize driver "
++				   "interface - try next driver wrapper");
++			driver = pos + 1;
++			goto next_driver;
++		}
+ 		wpa_printf(MSG_ERROR, "Failed to initialize driver interface");
+ 		return -1;
+ 	}
+@@ -1915,8 +1924,7 @@ struct wpa_supplicant * wpa_supplicant_a
+ 	if (wpa_s == NULL)
+ 		return NULL;
+ 
+-	if (wpa_supplicant_init_iface(wpa_s, iface) ||
+-	    wpa_supplicant_init_iface2(wpa_s)) {
++	if (wpa_supplicant_init_iface(wpa_s, iface)) {
+ 		wpa_printf(MSG_DEBUG, "Failed to add interface %s",
+ 			   iface->ifname);
+ 		wpa_supplicant_deinit_iface(wpa_s);

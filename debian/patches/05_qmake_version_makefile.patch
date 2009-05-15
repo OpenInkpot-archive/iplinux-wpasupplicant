@@ -1,0 +1,25 @@
+From: Kel Modderman <kel@otaku42.de>
+Reference: http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=463547
+Description: fix FTBFS if both qt3 and qt4 are installed
+ invoke versioned qmake binary when preparing the Makefile for
+ wpa_gui/wpa_gui-qt4 or else a failure to build from source can be possible
+ when more than one QT version is installed.
+
+--- a/wpa_supplicant/Makefile
++++ b/wpa_supplicant/Makefile
+@@ -1160,13 +1160,13 @@ windows-bin: $(WINALL)
+ 	$(STRIP) $(WINALL)
+ 
+ wpa_gui/Makefile:
+-	qmake -o wpa_gui/Makefile wpa_gui/wpa_gui.pro 
++	qmake-qt3 -o wpa_gui/Makefile wpa_gui/wpa_gui.pro
+ 
+ wpa_gui: wpa_gui/Makefile
+ 	$(MAKE) -C wpa_gui
+ 
+ wpa_gui-qt4/Makefile:
+-	qmake -o wpa_gui-qt4/Makefile wpa_gui-qt4/wpa_gui.pro 
++	qmake-qt4 -o wpa_gui-qt4/Makefile wpa_gui-qt4/wpa_gui.pro
+ 
+ wpa_gui-qt4: wpa_gui-qt4/Makefile
+ 	$(MAKE) -C wpa_gui-qt4
