@@ -17,7 +17,7 @@ Build-Depends: debhelper (>= 6),
  libpcap-dev [kfreebsd-i386 kfreebsd-amd64],
  libbsd [kfreebsd-i386 kfreebsd-amd64]
 XCS-Cross-Host-Build-Depends: debhelper (>= 6), quilt, pkg-config
-XCS-Cross-Build-Depends: libreadline5-dev, libpcap-dev
+XCS-Cross-Build-Depends: libreadline5-dev
 Standards-Version: 3.8.1
 Vcs-Svn: svn://svn.debian.org/pkg-wpa/wpasupplicant/trunk
 Vcs-Browser: http://svn.debian.org/wsvn/pkg-wpa/wpasupplicant/trunk/
