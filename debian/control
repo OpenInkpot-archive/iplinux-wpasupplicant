@@ -1,7 +1,7 @@
 Source: wpasupplicant
 Section: core
 Priority: optional
-Maintainer: Yauhen Kharuzhy <yauhen.kharuzhy@promwad.com>
+Maintainer: Yauhen Kharuzhy <jekhor@gmail.com>
 Build-Depends: debhelper (>= 6),
  quilt,
  libdbus-glib-1-dev,
