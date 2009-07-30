@@ -25,20 +25,18 @@ test -d /var/run || exit 0
 
 test -x /sbin/ifdown || exit 0
 
-. /lib/lsb/init-functions
-
 stop_wpa_action () {
 	test -x /sbin/wpa_action || return 0
 	IFACES=$(find /var/run -maxdepth 1 -type f -name 'wpa_action.*.pid' -printf '%P\n' | \
 		cut -d'.' -f2 2>/dev/null)
 	if test -n "$IFACES"; then
-		log_daemon_msg "Stopping wpa_action roaming interfaces"
+		echo "Stopping wpa_action roaming interfaces: " >&2
 		for iface in $IFACES; do
-			log_progress_msg "$iface"
+			echo "$iface" >&2
 			# wpa_action executes /sbin/ifdown
 			wpa_action "$iface" stop >/dev/null 2>&1
 		done
-		log_end_msg 0
+		echo "done." >&2
 	fi
 }
 
@@ -46,12 +44,12 @@ stop_wpa_supplicant () {
 	IFACES=$(find /var/run -maxdepth 1 -type f -name 'wpa_supplicant.*.pid' -printf '%P\n' | \
 		grep -v wpa_supplicant.dbus.pid | cut -d'.' -f2 2>/dev/null)
 	if test -n "$IFACES"; then
-		log_daemon_msg "Stopping wpa_supplicant interfaces"
+		echo "Stopping wpa_supplicant interfaces: " >&2
 		for iface in $IFACES; do
-			log_progress_msg "$iface"
+			echo "$iface" >&2
 			ifdown "$iface" >/dev/null 2>&1
 		done
-		log_end_msg 0
+		echo "done." >&2
 	fi
 }
 
