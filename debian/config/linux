@@ -272,7 +272,7 @@ CONFIG_IEEE80211W=y
 # gnutls = GnuTLS (needed for TLS/IA, see also CONFIG_GNUTLS_EXTRA)
 # internal = Internal TLSv1 implementation (experimental)
 # none = Empty template
-CONFIG_TLS=none
+CONFIG_TLS=internal
 
 # Whether to enable TLS/IA support, which is required for EAP-TTLSv1.
 # You need CONFIG_TLS=gnutls for this to have any effect. Please note that
@@ -286,7 +286,7 @@ CONFIG_TLS=none
 # needed for LibTomMath. Alternatively, an integrated, minimal version of
 # LibTomMath can be used. See beginning of libtommath.c for details on benefits
 # and drawbacks of this option.
-#CONFIG_INTERNAL_LIBTOMMATH=y
+CONFIG_INTERNAL_LIBTOMMATH=y
 #ifndef CONFIG_INTERNAL_LIBTOMMATH
 #LTM_PATH=/usr/src/libtommath-0.39
 #CFLAGS += -I$(LTM_PATH)
@@ -296,7 +296,7 @@ CONFIG_TLS=none
 # At the cost of about 4 kB of additional binary size, the internal LibTomMath
 # can be configured to include faster routines for exptmod, sqr, and div to
 # speed up DH and RSA calculation considerably
-#CONFIG_INTERNAL_LIBTOMMATH_FAST=y
+CONFIG_INTERNAL_LIBTOMMATH_FAST=y
 
 # Include NDIS event processing through WMI into wpa_supplicant/wpasvc.
 # This is only for Windows builds and requires WMI-related header files and
