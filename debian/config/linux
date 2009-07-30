@@ -163,7 +163,7 @@ CONFIG_PKCS12=y
 
 # PC/SC interface for smartcards (USIM, GSM SIM)
 # Enable this if EAP-SIM or EAP-AKA is included
-CONFIG_PCSC=y
+#CONFIG_PCSC=y
 
 # Development testing
 #CONFIG_EAPOL_TEST=y
