@@ -272,7 +272,7 @@ CONFIG_IEEE80211W=y
 # gnutls = GnuTLS (needed for TLS/IA, see also CONFIG_GNUTLS_EXTRA)
 # internal = Internal TLSv1 implementation (experimental)
 # none = Empty template
-CONFIG_TLS=internal
+CONFIG_TLS=none
 
 # Whether to enable TLS/IA support, which is required for EAP-TTLSv1.
 # You need CONFIG_TLS=gnutls for this to have any effect. Please note that
